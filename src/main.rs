@@ -1,13 +1,19 @@
 use actix_web::{web, App, HttpServer, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 // Define a struct for the cache entry
 #[derive(Serialize, Deserialize, Clone)]
 struct CacheEntry {
     key: String,
     value: String,
+    tags: Vec<String>,
+}
+
+// Define a struct for the revalidate request
+#[derive(Serialize, Deserialize)]
+struct RevalidateRequest {
     tags: Vec<String>,
 }
 
@@ -32,13 +38,13 @@ async fn get_cache(key: web::Path<String>, cache: web::Data<Cache>) -> impl Resp
 }
 
 // Define a handler for clearing cache by tags
-async fn clear_cache(data: web::Json<HashSet<String>>, cache: web::Data<Cache>) -> impl Responder {
+async fn clear_cache(data: web::Json<RevalidateRequest>, cache: web::Data<Cache>) -> impl Responder {
     let mut cache = cache.lock().unwrap();
     // Collect keys to remove based on tags
     let keys_to_remove: Vec<String> = cache
         .iter()
         .filter_map(|(key, entry)| {
-            if entry.tags.iter().any(|tag| data.contains(tag)) {
+            if entry.tags.iter().any(|tag| data.tags.contains(tag)) {
                 Some(key.clone())
             } else {
                 None
