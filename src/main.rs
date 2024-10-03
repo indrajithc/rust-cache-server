@@ -1,10 +1,10 @@
 use actix_web::{web, App, HttpServer, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Define a struct for the cache entry
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct CacheEntry {
     key: String,
     value: String,
@@ -31,6 +31,29 @@ async fn get_cache(key: web::Path<String>, cache: web::Data<Cache>) -> impl Resp
     }
 }
 
+// Define a handler for clearing cache by tags
+async fn clear_cache(data: web::Json<HashSet<String>>, cache: web::Data<Cache>) -> impl Responder {
+    let mut cache = cache.lock().unwrap();
+    // Collect keys to remove based on tags
+    let keys_to_remove: Vec<String> = cache
+        .iter()
+        .filter_map(|(key, entry)| {
+            if entry.tags.iter().any(|tag| data.contains(tag)) {
+                Some(key.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Remove the entries from the cache
+    for key in keys_to_remove {
+        cache.remove(&key);
+    }
+
+    HttpResponse::Ok().body("Cache cleared successfully")
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Initialize a new cache
@@ -41,8 +64,9 @@ async fn main() -> std::io::Result<()> {
         let cache_clone = cache.clone();
         App::new()
             .app_data(web::Data::new(cache_clone))
-            .route("/cache", web::post().to(store_cache)) // Handle POST requests
-            .route("/cache/{key}", web::get().to(get_cache)) // Handle GET requests
+            .route("/cache", web::post().to(store_cache)) // Handle POST requests for storing cache
+            .route("/cache/{key}", web::get().to(get_cache)) // Handle GET requests for retrieving cache
+            .route("/cache/revalidate", web::post().to(clear_cache)) // Handle POST requests for clearing cache by tags
     })
     .bind("127.0.0.1:5000")? // Bind to the address
     .run() // Run the server
